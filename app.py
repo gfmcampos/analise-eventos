@@ -5,14 +5,18 @@ from datetime import datetime
 from core_processing import load_and_prepare_data
 from analysis_functions import analisar_admissoes_recontratacoes, analisar_divergencias_info, analisar_demissoes
 
+# --- CONFIGURAÇÃO INICIAL DA PÁGINA ---
 st.set_page_config(
     layout="wide",
     page_title="Análise de Colaboradores",
     initial_sidebar_state="expanded"
 )
 
+# --- TÍTULO PRINCIPAL ---
 st.title("🔎 Ferramenta de Análise de Sincronia de Colaboradores")
 
+
+# --- BARRA LATERAL (SIDEBAR) ---
 with st.sidebar:
     st.image("imgs/login_logo.png", width=250)
     st.header("Painel de Controle")
@@ -33,6 +37,8 @@ with st.sidebar:
         """)
     st.info("Desenvolvido por SF Teste - Junho/2025")
 
+
+# --- FUNÇÕES AUXILIARES ---
 @st.cache_data
 def carregar_dados_wrapper():
     return load_and_prepare_data()
@@ -43,9 +49,15 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Relatorio')
     return output.getvalue()
 
+
+# --- LÓGICA DE EXIBIÇÃO DAS PÁGINAS ---
+
 if menu_selecao == "Página inicial":
     st.header("Bem-vindo(a) à sua ferramenta de análise integrada!", divider='rainbow')
-    st.markdown("Esta plataforma foi desenhada para simplificar e automatizar a validação de dados de colaboradores entre as bases do Brasil e da Espanha.")
+    st.markdown("""
+    Esta plataforma foi desenhada para simplificar e automatizar a validação de dados de colaboradores entre as bases do Brasil e da Espanha.
+    Navegue pelo **Menu de Análises** na barra lateral para executar as validações necessárias.
+    """)
     st.subheader("O que você pode fazer aqui?")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -86,11 +98,35 @@ else:
                 filename_base = f"Pendencias_Demissao_{agora}"
 
         st.header(header, divider='rainbow')
+        
         if "Erro" in df_relatorio.columns:
             st.error(df_relatorio["Erro"].iloc[0])
         elif df_relatorio.empty:
             st.success("✅ Nenhuma pendência ou divergência encontrada.")
         else:
+            # --- NOVO BLOCO DE GRÁFICOS INTERATIVOS ---
+            st.subheader("📊 Dashboard Interativo")
+            
+            with st.container(border=True):
+                # Prepara os dados para o gráfico dependendo da análise
+                if menu_selecao == "Admissões & Recontratações":
+                    df_chart = df_relatorio['evento_sugerido'].value_counts().reset_index()
+                    df_chart.columns = ['Tipo de Pendência', 'Quantidade']
+                    st.bar_chart(df_chart, x='Tipo de Pendência', y='Quantidade', color="#0083B8")
+
+                elif menu_selecao == "Informações pessoais & Informações de cargo":
+                    df_chart = df_relatorio['campo_divergente'].value_counts().reset_index()
+                    df_chart.columns = ['Campo com Divergência', 'Quantidade']
+                    st.bar_chart(df_chart, x='Campo com Divergência', y='Quantidade', color="#FF6347")
+                
+                elif menu_selecao == "Demissões":
+                    df_chart = df_relatorio['evento_demissao_brasil'].value_counts().reset_index()
+                    df_chart.columns = ['Motivo da Demissão (Brasil)', 'Quantidade']
+                    st.bar_chart(df_chart, x='Motivo da Demissão (Brasil)', y='Quantidade', color="#4B0082")
+
+            # --- FIM DO BLOCO DE GRÁFICOS ---
+            
+            st.subheader("📄 Relatório Detalhado")
             with st.container(border=True):
                 col1, col2 = st.columns([0.3, 0.7])
                 with col1:
@@ -100,4 +136,5 @@ else:
                     btn1, btn2 = st.columns(2)
                     btn1.download_button("📥 Baixar Relatório (.xlsx)", to_excel(df_relatorio), f"{filename_base}.xlsx", use_container_width=True)
                     btn2.download_button("📥 Baixar Chapas (.txt)", txt_content, f"{filename_base}.txt", use_container_width=True)
+            
             st.dataframe(df_relatorio, use_container_width=True)

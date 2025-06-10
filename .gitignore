@@ -1,0 +1,16 @@
+# Arquivos de ambiente Python
+__pycache__/
+*.pyc
+.env
+venv/
+env/
+
+# Pasta de saídas geradas pelos scripts
+output/
+
+# Arquivos de dados (IMPORTANTE, leia a nota abaixo)
+data/
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db

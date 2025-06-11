@@ -1,7 +1,10 @@
+import streamlit as st # type: ignore # Importa o streamlit para usar o cache
 import pandas as pd # type: ignore
 import numpy as np # type: ignore
 from datetime import datetime, timedelta
 
+# Adicionando o decorador de cache para otimizar a performance
+@st.cache_data
 def analisar_admissoes_recontratacoes(brasil_limpo, espanha_historico):
     brasil_limpo = brasil_limpo[brasil_limpo['status_empregado'] == 'Activo'].copy()
     expats_br_list = ['expaIn', 'expaOut']
@@ -51,6 +54,7 @@ def analisar_admissoes_recontratacoes(brasil_limpo, espanha_historico):
         conteudo_txt.append(';'.join(chapas_verificar.astype(str)))
     return df_relatorio_final, '\n'.join(conteudo_txt)
 
+@st.cache_data
 def analisar_divergencias_info(brasil_limpo, espanha_historico):
     brasil_limpo = brasil_limpo[brasil_limpo['status_empregado'] == 'Activo'].copy()
     espanha_ativos = espanha_historico[espanha_historico['status_empregado'] == 'Activo'].copy()
@@ -81,54 +85,36 @@ def analisar_divergencias_info(brasil_limpo, espanha_historico):
         txt.extend(["--------------EVE013------------", ';'.join(chapas_013)])
     return df_relatorio_final, "\n".join(txt)
 
+@st.cache_data
 def analisar_demissoes(brasil_limpo, espanha_historico):
-    """
-    Função atualizada para analisar demissões com a nova regra de negócio.
-    Filtra por eventos de demissão no Brasil, verifica se o colaborador ainda está ativo na Espanha
-    e se o pagamento da rescisão ocorreu há mais de 5 dias.
-    """
     eventos_demissao = ['eve005', 'eve008', 'eve009', 'eve010', 'eve011', 'eve024', 'eve025', 'eve026', 'eve027']
-    
     if 'dt_pagto_rescisao' not in brasil_limpo.columns:
         return pd.DataFrame({'Erro': ["A coluna 'DTPAGTORESCISAO' não foi encontrada na Base RM."]}), ""
-
     brasil_recente = brasil_limpo.sort_values('data_efetiva', ascending=False).drop_duplicates('id_sistema_local', keep='first')
     brasil_recente['evento_codigo'] = brasil_recente['motivo_evento'].astype(str).str.split('-').str[0].str.strip().str.lower()
-    
     colaboradores_demitidos_br = brasil_recente[brasil_recente['evento_codigo'].isin(eventos_demissao)].copy()
     if colaboradores_demitidos_br.empty: return pd.DataFrame(), ""
-        
-    df_merged = pd.merge(
-        colaboradores_demitidos_br,
-        espanha_historico[['id_sistema_local', 'status_empregado']],
-        on='id_sistema_local', how='left', suffixes=('_br', '_es')
-    )
-    
+    df_merged = pd.merge(colaboradores_demitidos_br, espanha_historico[['id_sistema_local', 'status_empregado']], on='id_sistema_local', how='left', suffixes=('_br', '_es'))
     pendencias_status = df_merged[df_merged['status_empregado_es'] == 'Activo'].copy()
     if pendencias_status.empty: return pd.DataFrame(), ""
-        
-    # --- NOVA REGRA DE NEGÓCIO APLICADA AQUI ---
-    # Remove registros sem data de pagamento para evitar erros
     pendencias_status.dropna(subset=['dt_pagto_rescisao'], inplace=True)
-    # Define a data limite: hoje - 5 dias
     data_limite = datetime.now() - timedelta(days=5)
-    # Filtra apenas as rescisões pagas ANTES da data limite (ou seja, há mais de 5 dias)
     pendencias_finais = pendencias_status[pendencias_status['dt_pagto_rescisao'] < data_limite].copy()
-
     if pendencias_finais.empty: return pd.DataFrame(), ""
-
     df_relatorio = pendencias_finais.rename(columns={
         'chapa': 'chapa_brasil', 'nome': 'nome_completo', 'status_empregado_br': 'status_brasil',
         'status_empregado_es': 'status_espanha', 'motivo_evento': 'evento_demissao_brasil',
         'dt_pagto_rescisao': 'data_pagamento_rescisao'
     })
-    
-    df_relatorio = df_relatorio[[
-        'id_sistema_local', 'chapa_brasil', 'nome_completo', 'status_brasil', 'status_espanha', 
-        'evento_demissao_brasil', 'data_pagamento_rescisao'
-    ]]
-    
-    chapas_para_envio = ';'.join(df_relatorio['chapa_brasil'].unique())
-    conteudo_txt = "--------------DEMISSÕES (PAGTO > 5 DIAS)------------\n" + chapas_para_envio if chapas_para_envio else ""
-
-    return df_relatorio, conteudo_txt
+    colunas_finais_relatorio = ['id_sistema_local', 'chapa_brasil', 'nome_completo', 'status_brasil', 'status_espanha', 'evento_demissao_brasil', 'data_pagamento_rescisao']
+    df_relatorio = df_relatorio[colunas_finais_relatorio]
+    df_relatorio['evento_codigo'] = df_relatorio['evento_demissao_brasil'].astype(str).str.split('-').str[0].str.strip()
+    eventos_encontrados = sorted(df_relatorio['evento_codigo'].unique())
+    conteudo_txt = []
+    for evento in eventos_encontrados:
+        chapas = df_relatorio[df_relatorio['evento_codigo'] == evento]['chapa_brasil'].unique()
+        if chapas.size > 0:
+            if conteudo_txt: conteudo_txt.append("\n")
+            conteudo_txt.append(f"--------------{evento.upper()}------------")
+            conteudo_txt.append(';'.join(chapas))
+    return df_relatorio, "\n".join(conteudo_txt)
